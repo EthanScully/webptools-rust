@@ -106,13 +106,11 @@ impl FfmpegCtx {
             return Ok(self.num_frames);
         }
         let mut frames: i64 = 0;
+        while self.read_next_frame() {
+            frames += 1;
+            self.packet_cleanup();
+        }
         unsafe {
-            while C::av_read_frame(self.fmt, self.pkt) >= 0 {
-                if (*self.pkt).stream_index == self.index {
-                    frames += 1;
-                }
-                C::av_packet_unref(self.pkt);
-            }
             C::av_seek_frame(self.fmt, self.index, 0, C::AVSEEK_FLAG_BACKWARD as i32);
         }
         self.num_frames = frames;
@@ -123,12 +121,7 @@ impl FfmpegCtx {
         (w as f64) / (h as f64)
     }
     // Desired resolution and PXL fomat for after decoding
-    pub fn init_frame_convert(
-        &mut self,
-        mut width: i32,
-        mut height: i32,
-        rgb: bool,
-    ) -> Result<()> {
+    pub fn init_frame_convert(&mut self, mut width: i32, mut height: i32, rgb: bool) -> Result<()> {
         let pxl_fmt: C::AVPixelFormat;
         if rgb {
             pxl_fmt = C::AVPixelFormat_AV_PIX_FMT_YUV420P;
@@ -212,8 +205,12 @@ impl FfmpegCtx {
     /// Returns the duration of the frame
     pub fn frame_cleanup(&mut self) -> i32 {
         unsafe {
-            let stream = slice::from_raw_parts((*self.fmt).streams, (self.index + 1) as usize)[self.index as usize];
-            let frame_duration = ((*self.frame).duration as f64 * ((*stream).time_base.num as f64 / (*stream).time_base.den as f64) * 1000.0).round() as i32;
+            let stream = slice::from_raw_parts((*self.fmt).streams, (self.index + 1) as usize)
+                [self.index as usize];
+            let frame_duration = ((*self.frame).duration as f64
+                * ((*stream).time_base.num as f64 / (*stream).time_base.den as f64)
+                * 1000.0)
+                .round() as i32;
             C::av_frame_unref(self.frame);
             return frame_duration;
         }
@@ -258,11 +255,56 @@ impl FfmpegCtx {
     }
     /// UNSAFE return value is only valid until frame_cleanup()
     pub fn get_conv_frame_data<'a>(&self) -> &[*mut u8; 8] {
+        unsafe { &(*self.dummy_frame).data }
+    }
+    /// Get RGB data from single frame (data,linesize,height)
+    pub fn retrieve_single_frame(
+        &mut self,
+        frame_num: i32,
+        width: i32,
+        height: i32,
+    ) -> Result<(Vec<u8>, usize, usize)> {
+        let linesize: usize;
+        let dst_height: usize;
+        let mut data: Vec<u8>;
+        self.init_frame_convert(width, height, true)?;
         unsafe {
-            &(*self.dummy_frame).data
+            C::av_seek_frame(
+                self.fmt,
+                self.index,
+                frame_num as i64,
+                C::AVSEEK_FLAG_FRAME as i32,
+            );
         }
+        if self.read_next_frame() {
+            self.send_packet(false).map_err(line!())?;
+            self.convert_frame().map_err(line!())?;
+            let raw_data: &[u8];
+            unsafe {
+                linesize = (*self.dummy_frame).linesize[0] as usize;
+                dst_height = (*self.dummy_frame).height as usize;
+                raw_data = slice::from_raw_parts((*self.dummy_frame).data[0], linesize)
+            }
+            let len = linesize * dst_height;
+            data = vec![0; len];
+            let i: usize = 0;
+            while i < len {
+                data[i] = raw_data[i]
+            }
+            self.send_packet(true).map_err(line!())?;
+            self.packet_cleanup();
+            unsafe {
+                C::av_seek_frame(self.fmt, self.index, 0, C::AVSEEK_FLAG_BACKWARD as i32);
+            }
+        } else {
+            unsafe {
+                C::av_seek_frame(self.fmt, self.index, 0, C::AVSEEK_FLAG_BACKWARD as i32);
+            }
+            return Err(format!("can not read given frame")).map_err(line!())?;
+        }
+        Ok((data, linesize, dst_height))
     }
-    }
+}
 impl Drop for FfmpegCtx {
     fn drop(&mut self) {
         unsafe {
