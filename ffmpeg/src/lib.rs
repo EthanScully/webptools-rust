@@ -218,7 +218,7 @@ impl FfmpegCtx {
             return frame_duration;
         }
     }
-    pub fn unref_packet(&mut self) {
+    pub fn packet_cleanup(&mut self) {
         unsafe {
             C::av_packet_unref(self.pkt);
         }
@@ -256,7 +256,13 @@ impl FfmpegCtx {
             return Ok(());
         }
     }
-}
+    /// UNSAFE return value is only valid until frame_cleanup()
+    pub fn get_conv_frame_data<'a>(&self) -> &[*mut u8; 8] {
+        unsafe {
+            &(*self.dummy_frame).data
+        }
+    }
+    }
 impl Drop for FfmpegCtx {
     fn drop(&mut self) {
         unsafe {

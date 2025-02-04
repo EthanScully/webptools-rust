@@ -2,7 +2,7 @@ use ffmpeg;
 use std::*;
 type Result<T> = std::result::Result<T, Box<dyn error::Error>>;
 fn main() {
-    let mut ctx = ffmpeg::new("test.mp4").unwrap();
+    let mut ctx: ffmpeg::FfmpegCtx = ffmpeg::new("test.mp4").unwrap();
     println!("# of Frames: {}", ctx.frame_count().unwrap());
     ctx.init_frame_convert(200, 0, false).unwrap();
     let mut timestamp = 0;
@@ -19,6 +19,8 @@ fn add_frame(ctx: &mut ffmpeg::FfmpegCtx, nil: bool, ts: &mut i32, cfd: i32) -> 
     ctx.send_packet(nil)?;
     while ctx.decode_frame()? {
         ctx.convert_frame()?;
+        
+        let test = ctx.get_conv_frame_data();
         // encode webp frame
         let fd = ctx.frame_cleanup();
         if cfd <= 0 {
@@ -27,6 +29,6 @@ fn add_frame(ctx: &mut ffmpeg::FfmpegCtx, nil: bool, ts: &mut i32, cfd: i32) -> 
             *ts += cfd;
         }
     }
-    ctx.unref_packet();
+    ctx.packet_cleanup();
     Ok(())
 }
