@@ -42,7 +42,9 @@ pub fn new(filepath: &str) -> Result<FfmpegCtx> {
     unsafe {
         if C::avformat_open_input(
             &mut fmt,
-            ffi::CString::new(filepath).map_err(line!())?.as_ptr(),
+            ffi::CString::new(format!("file:{}", filepath))
+                .map_err(line!())?
+                .as_ptr(),
             ptr::null_mut(),
             ptr::null_mut(),
         ) < 0
@@ -75,7 +77,7 @@ pub fn new(filepath: &str) -> Result<FfmpegCtx> {
         if C::avcodec_open2(codec, dec, ptr::null_mut()) < 0 {
             return Err(format!("error opening codec")).map_err(line!())?;
         }
-        resolution = ((*codec).width, (*codec).width);
+        resolution = ((*codec).width, (*codec).height);
         frame = C::av_frame_alloc();
         if frame.is_null() {
             return Err(format!("error allocating frame")).map_err(line!())?;
@@ -110,9 +112,7 @@ impl FfmpegCtx {
             frames += 1;
             self.packet_cleanup();
         }
-        unsafe {
-            C::av_seek_frame(self.fmt, self.index, 0, C::AVSEEK_FLAG_BACKWARD as i32);
-        }
+        self.seek_frame(0).map_err(line!())?;
         self.num_frames = frames;
         Ok(frames)
     }
@@ -124,9 +124,9 @@ impl FfmpegCtx {
     pub fn init_frame_convert(&mut self, mut width: i32, mut height: i32, rgb: bool) -> Result<()> {
         let pxl_fmt: C::AVPixelFormat;
         if rgb {
-            pxl_fmt = C::AVPixelFormat_AV_PIX_FMT_YUV420P;
-        } else {
             pxl_fmt = C::AVPixelFormat_AV_PIX_FMT_ARGB;
+        } else {
+            pxl_fmt = C::AVPixelFormat_AV_PIX_FMT_YUV420P;
         }
         if width <= 0 || height <= 0 {
             if width <= 0 && height <= 0 {
@@ -144,6 +144,9 @@ impl FfmpegCtx {
             width -= 1
         }
         unsafe {
+            (*self.dummy_frame).height = height;
+            (*self.dummy_frame).width = width;
+            (*self.dummy_frame).format = pxl_fmt;
             let data = (*self.dummy_frame).data.as_mut_ptr();
             if !data.is_null() {
                 C::av_freep(data as *mut ffi::c_void);
@@ -197,10 +200,11 @@ impl FfmpegCtx {
                 if r == -541478725 || r == -11 {
                     return Ok(false);
                 }
-                return Err(format!("error during decoding")).map_err(line!())?;
+                return Err(format!("error during decoding:{}", r)).map_err(line!())?;
+            } else {
+                return Ok(true);
             }
         }
-        Ok(true)
     }
     /// Returns the duration of the frame
     pub fn frame_cleanup(&mut self) -> i32 {
@@ -264,45 +268,74 @@ impl FfmpegCtx {
         width: i32,
         height: i32,
     ) -> Result<(Vec<u8>, usize, usize)> {
-        let linesize: usize;
-        let dst_height: usize;
-        let mut data: Vec<u8>;
-        self.init_frame_convert(width, height, true)?;
+        let mut linesize: usize = 0;
+        let mut dst_height = height as usize;
+        let mut data: Vec<u8> = Vec::new();
+        self.init_frame_convert(width, height, true).map_err(line!())?;
+        self.seek_frame(frame_num as i64).map_err(line!())?;
+        'a: while self.read_next_frame() {
+            self.send_packet(false).map_err(line!())?;
+            while self.decode_frame().map_err(line!())? {
+                self.convert_frame().map_err(line!())?;
+                let raw_data: &[u8];
+                let len: usize;
+                unsafe {
+                    linesize = (*self.dummy_frame).linesize[0] as usize;
+                    dst_height = (*self.dummy_frame).height as usize;
+                    len = linesize * dst_height;
+                    raw_data = slice::from_raw_parts((*self.dummy_frame).data[0], len)
+                }
+                data = vec![0; len];
+                let mut i: usize = 0;
+                while i < len {
+                    data[i] = raw_data[i];
+                    i += 1;
+                }
+
+                let _ = self.frame_cleanup();
+                break 'a;
+            }
+            self.packet_cleanup();
+        }
+        self.seek_frame(0).map_err(line!())?;
+        if data.len() == 0 {
+            Err(format!("error decoding given frame")).map_err(line!())?
+        } else {
+            Ok((data, linesize, dst_height))
+        }
+    }
+    fn seek_frame(&mut self, frame_num: i64) -> Result<()> {
+        if frame_num as i64 >= self.frame_count().map_err(line!())? {
+            return Err(format!(
+                "selected frame is larger than amount in given media"
+            ))
+            .map_err(line!())?;
+        }
         unsafe {
-            C::av_seek_frame(
+            if C::av_seek_frame(self.fmt, self.index, frame_num, C::AVSEEK_FLAG_FRAME as i32) >= 0 {
+                return Ok(());
+            }
+            let stream = slice::from_raw_parts((*self.fmt).streams, self.index as usize + 1)
+                [self.index as usize];
+            let time_base = (*stream).time_base;
+            let framerate = C::av_guess_frame_rate(self.fmt, stream, self.frame);
+            let inv_framerate = C::AVRational {
+                num: framerate.den,
+                den: framerate.num,
+            };
+            let timestamp = C::av_rescale_q(frame_num, inv_framerate, time_base);
+            if C::av_seek_frame(
                 self.fmt,
                 self.index,
-                frame_num as i64,
-                C::AVSEEK_FLAG_FRAME as i32,
-            );
+                timestamp,
+                C::AVSEEK_FLAG_BACKWARD as i32,
+            ) < 0
+            {
+                Err(format!("error seeking to frame: {}", frame_num)).map_err(line!())?;
+            }
+            C::avcodec_flush_buffers(self.codec);
+            Ok(())
         }
-        if self.read_next_frame() {
-            self.send_packet(false).map_err(line!())?;
-            self.convert_frame().map_err(line!())?;
-            let raw_data: &[u8];
-            unsafe {
-                linesize = (*self.dummy_frame).linesize[0] as usize;
-                dst_height = (*self.dummy_frame).height as usize;
-                raw_data = slice::from_raw_parts((*self.dummy_frame).data[0], linesize)
-            }
-            let len = linesize * dst_height;
-            data = vec![0; len];
-            let i: usize = 0;
-            while i < len {
-                data[i] = raw_data[i]
-            }
-            self.send_packet(true).map_err(line!())?;
-            self.packet_cleanup();
-            unsafe {
-                C::av_seek_frame(self.fmt, self.index, 0, C::AVSEEK_FLAG_BACKWARD as i32);
-            }
-        } else {
-            unsafe {
-                C::av_seek_frame(self.fmt, self.index, 0, C::AVSEEK_FLAG_BACKWARD as i32);
-            }
-            return Err(format!("can not read given frame")).map_err(line!())?;
-        }
-        Ok((data, linesize, dst_height))
     }
 }
 impl Drop for FfmpegCtx {
@@ -312,6 +345,7 @@ impl Drop for FfmpegCtx {
             if !data.is_null() {
                 C::av_freep(data as *mut ffi::c_void);
             }
+            self.send_packet(true).map_err(line!()).unwrap();
             C::av_frame_free(&mut self.dummy_frame);
             C::av_frame_free(&mut self.frame);
             C::av_packet_free(&mut self.pkt);

@@ -4,3 +4,5 @@
 #include <libavutil/avutil.h>
 #include <libswscale/swscale.h>
 #include <libavutil/error.h>
+#include <libavutil/mathematics.h>
+#include <libavutil/rational.h>
