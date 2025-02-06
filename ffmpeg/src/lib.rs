@@ -259,26 +259,33 @@ impl FfmpegCtx {
     }
     /// UNSAFE return value is only valid until convert_frame() is ran again
     /// returns (&data, width, height)
-    pub fn get_conv_frame_data(&self) -> Result<(&[*mut u8; 8],i32,i32)> {
+    pub fn get_conv_frame_data(&self) -> Result<(&[*mut u8; 8], i32, i32)> {
         unsafe {
-            let (w,h) = ((*self.dummy_frame).width, (*self.dummy_frame).height);
+            let (w, h) = ((*self.dummy_frame).width, (*self.dummy_frame).height);
             if w == 0 || h == 0 {
                 Err(format!("data doesn't exist")).map_err(line!())?
             }
-            Ok((&(*self.dummy_frame).data,w,h))
+            Ok((&(*self.dummy_frame).data, w, h))
         }
     }
     /// Get RGB data from single frame
-    pub fn retrieve_single_frame(&mut self,frame_num: i32,width: i32,height: i32,) -> Result<&[u8]> {
+    pub fn retrieve_single_frame(
+        &mut self,
+        frame_num: i32,
+        width: i32,
+        height: i32,
+    ) -> Result<&[u8]> {
         let output: &[u8];
-        self.init_frame_convert(width, height, true).map_err(line!())?;
+        self.init_frame_convert(width, height, true)
+            .map_err(line!())?;
         self.seek_frame(frame_num as i64).map_err(line!())?;
         while self.read_next_frame() {
             self.send_packet(false).map_err(line!())?;
             while self.decode_frame().map_err(line!())? {
                 self.convert_frame().map_err(line!())?;
                 unsafe {
-                    let len = (*self.dummy_frame).linesize[0] as usize * (*self.dummy_frame).height as usize;
+                    let len = (*self.dummy_frame).linesize[0] as usize
+                        * (*self.dummy_frame).height as usize;
                     output = slice::from_raw_parts((*self.dummy_frame).data[0], len);
                 }
                 let _ = self.frame_cleanup();
@@ -288,7 +295,7 @@ impl FfmpegCtx {
             }
             self.packet_cleanup();
         }
-        return Err(format!("error decoding given frame")).map_err(line!())?
+        return Err(format!("error decoding given frame")).map_err(line!())?;
     }
     pub fn seek_frame(&mut self, frame_num: i64) -> Result<()> {
         if frame_num as i64 >= self.frame_count().map_err(line!())? {
@@ -331,7 +338,7 @@ impl Drop for FfmpegCtx {
             if !data.is_null() {
                 C::av_freep(data as *mut ffi::c_void);
             }
-           self.send_packet(true).map_err(line!()).unwrap();
+            self.send_packet(true).map_err(line!()).unwrap();
             C::av_frame_free(&mut self.dummy_frame);
             C::av_frame_free(&mut self.frame);
             C::av_packet_free(&mut self.pkt);

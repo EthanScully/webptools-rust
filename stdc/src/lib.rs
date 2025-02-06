@@ -17,9 +17,6 @@ impl CArray {
             Ok(slice::from_raw_parts(self.ptr, self.size))
         }
     }
-    pub fn is_null(&self) -> bool {
-        self.ptr.is_null()
-    }
 }
 impl Drop for CArray {
     fn drop(&mut self) {

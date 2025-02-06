@@ -53,7 +53,6 @@ impl WebpCtx {
                 config.target_size = target_size;
                 config.quality = 100.0;
             }
-            println!("{},{}",width,height);
             enc = C::WebPAnimEncoderNewInternal(
                 width,
                 height,
@@ -61,7 +60,8 @@ impl WebpCtx {
                 C::WEBP_MUX_ABI_VERSION as i32,
             );
             if enc.is_null() {
-                return Err(format!("error initializing encoder: memory error")).map_err(line!())?;
+                return Err(format!("error initializing encoder: memory error"))
+                    .map_err(line!())?;
             }
         }
         Ok(WebpCtx { enc, config })
@@ -74,10 +74,11 @@ impl WebpCtx {
         timestamp_ms: i32,
         rgb: bool,
     ) -> Result<()> {
-        let frame_data =match frame_data {
+        let frame_data = match frame_data {
             None => {
                 unsafe {
-                    if C::WebPAnimEncoderAdd(self.enc, ptr::null_mut(), timestamp_ms, &self.config) != 1
+                    if C::WebPAnimEncoderAdd(self.enc, ptr::null_mut(), timestamp_ms, &self.config)
+                        != 1
                     {
                         return Err(format!("error flushing encoder")).map_err(line!())?;
                     }
