@@ -28,80 +28,82 @@ pub struct FfmpegCtx {
     /// Number of Frames in Video
     num_frames: i64,
 }
-/// ### initialize ffmpeg environment context
-pub fn new(filepath: &str) -> Result<FfmpegCtx> {
-    let mut fmt: *mut C::AVFormatContext = ptr::null_mut();
-    let pkt: *mut C::AVPacket;
-    let frame: *mut C::AVFrame;
-    let dummy_frame: *mut C::AVFrame;
-    let codec: *mut C::AVCodecContext;
-    let index: ffi::c_int;
-    let resolution: (i32, i32);
-    let num_frames: i64;
-    unsafe {
-        if C::avformat_open_input(
-            &mut fmt,
-            ffi::CString::new(format!("file:{}", filepath))
-                .map_err(line!())?
-                .as_ptr(),
-            ptr::null_mut(),
-            ptr::null_mut(),
-        ) < 0
-        {
-            return Err(format!("error opening input")).map_err(line!())?;
-        }
-        if C::avformat_find_stream_info(fmt, ptr::null_mut()) < 0 {
-            return Err(format!("error finding stream info")).map_err(line!())?;
-        }
-        index = C::av_find_best_stream(fmt, 0, -1, -1, ptr::null_mut(), 0);
-        if index < 0 {
-            return Err(format!("could not find stream in input file")).map_err(line!())?;
-        }
-        let stream = slice::from_raw_parts((*fmt).streams, (index + 1) as usize)[index as usize];
-        if stream.is_null() {
-            return Err(format!("could not find stream in the input")).map_err(line!())?;
-        }
-        num_frames = (*stream).nb_frames;
-        let dec = C::avcodec_find_decoder((*(*stream).codecpar).codec_id);
-        if dec.is_null() {
-            return Err(format!("error finding codec")).map_err(line!())?;
-        }
-        codec = C::avcodec_alloc_context3(dec);
-        if codec.is_null() {
-            return Err(format!("error allocating codec context")).map_err(line!())?;
-        }
-        if C::avcodec_parameters_to_context(codec, (*stream).codecpar) < 0 {
-            return Err(format!("error copying codec parameters to context")).map_err(line!())?;
-        }
-        if C::avcodec_open2(codec, dec, ptr::null_mut()) < 0 {
-            return Err(format!("error opening codec")).map_err(line!())?;
-        }
-        resolution = ((*codec).width, (*codec).height);
-        frame = C::av_frame_alloc();
-        if frame.is_null() {
-            return Err(format!("error allocating frame")).map_err(line!())?;
-        }
-        pkt = C::av_packet_alloc();
-        if pkt.is_null() {
-            return Err(format!("error allocating packet")).map_err(line!())?;
-        }
-        dummy_frame = C::av_frame_alloc();
-        if frame.is_null() {
-            return Err(format!("error allocating frame")).map_err(line!())?;
-        }
-    }
-    Ok(FfmpegCtx {
-        fmt,
-        codec,
-        pkt,
-        frame,
-        dummy_frame,
-        index,
-        resolution,
-        num_frames,
-    })
-}
 impl FfmpegCtx {
+    /// ### initialize ffmpeg environment context
+    pub fn new(filepath: &str) -> Result<Self> {
+        let mut fmt: *mut C::AVFormatContext = ptr::null_mut();
+        let pkt: *mut C::AVPacket;
+        let frame: *mut C::AVFrame;
+        let dummy_frame: *mut C::AVFrame;
+        let codec: *mut C::AVCodecContext;
+        let index: ffi::c_int;
+        let resolution: (i32, i32);
+        let num_frames: i64;
+        unsafe {
+            if C::avformat_open_input(
+                &mut fmt,
+                ffi::CString::new(format!("file:{}", filepath))
+                    .map_err(line!())?
+                    .as_ptr(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+            ) < 0
+            {
+                return Err(format!("error opening input")).map_err(line!())?;
+            }
+            if C::avformat_find_stream_info(fmt, ptr::null_mut()) < 0 {
+                return Err(format!("error finding stream info")).map_err(line!())?;
+            }
+            index = C::av_find_best_stream(fmt, 0, -1, -1, ptr::null_mut(), 0);
+            if index < 0 {
+                return Err(format!("could not find stream in input file")).map_err(line!())?;
+            }
+            let stream =
+                slice::from_raw_parts((*fmt).streams, (index + 1) as usize)[index as usize];
+            if stream.is_null() {
+                return Err(format!("could not find stream in the input")).map_err(line!())?;
+            }
+            num_frames = (*stream).nb_frames;
+            let dec = C::avcodec_find_decoder((*(*stream).codecpar).codec_id);
+            if dec.is_null() {
+                return Err(format!("error finding codec")).map_err(line!())?;
+            }
+            codec = C::avcodec_alloc_context3(dec);
+            if codec.is_null() {
+                return Err(format!("error allocating codec context")).map_err(line!())?;
+            }
+            if C::avcodec_parameters_to_context(codec, (*stream).codecpar) < 0 {
+                return Err(format!("error copying codec parameters to context"))
+                    .map_err(line!())?;
+            }
+            if C::avcodec_open2(codec, dec, ptr::null_mut()) < 0 {
+                return Err(format!("error opening codec")).map_err(line!())?;
+            }
+            resolution = ((*codec).width, (*codec).height);
+            frame = C::av_frame_alloc();
+            if frame.is_null() {
+                return Err(format!("error allocating frame")).map_err(line!())?;
+            }
+            pkt = C::av_packet_alloc();
+            if pkt.is_null() {
+                return Err(format!("error allocating packet")).map_err(line!())?;
+            }
+            dummy_frame = C::av_frame_alloc();
+            if frame.is_null() {
+                return Err(format!("error allocating frame")).map_err(line!())?;
+            }
+        }
+        Ok(FfmpegCtx {
+            fmt,
+            codec,
+            pkt,
+            frame,
+            dummy_frame,
+            index,
+            resolution,
+            num_frames,
+        })
+    }
     pub fn frame_count(&mut self) -> Result<i64> {
         if self.num_frames != 0 {
             return Ok(self.num_frames);
@@ -260,8 +262,7 @@ impl FfmpegCtx {
     pub fn get_conv_frame_data(&self) -> &[*mut u8; 8] {
         unsafe { &(*self.dummy_frame).data }
     }
-    /// Get RGB data from single frame (data,linesize,height),
-    /// output will only be valid if FfmpegCtx struct is valid
+    /// Get RGB data from single frame
     pub fn retrieve_single_frame<'a>(
         &'a mut self,
         frame_num: i32,

@@ -18,53 +18,53 @@ pub struct WebpCtx {
     enc: *mut C::WebPAnimEncoder,
     config: C::WebPConfig,
 }
-pub fn new(
-    quality: f32,
-    lossless: bool,
-    speed: i32,
-    passes: i32,
-    target_size: i32,
-    width: i32,
-    height: i32,
-) -> Result<WebpCtx> {
-    let mut config: C::WebPConfig;
-    let enc: *mut C::WebPAnimEncoder;
-    unsafe {
-        config = mem::zeroed();
-        if C::WebPConfigInitInternal(
-            &mut config,
-            C::WebPPreset_WEBP_PRESET_DEFAULT,
-            75.0,
-            C::WEBP_ENCODER_ABI_VERSION as i32,
-        ) != 1
-        {
-            return Err(format!("WebPConfigInit failed")).map_err(line!())?;
-        }
-        config.quality = quality;
-        if lossless {
-            config.lossless = 1;
-        } else {
-            config.lossless = 0;
-        }
-        config.method = speed;
-        config.pass = passes;
-        if target_size > 0 {
-            config.target_size = target_size;
-            config.quality = 100.0;
-        }
-        enc = C::WebPAnimEncoderNewInternal(
-            width,
-            height,
-            ptr::null(),
-            C::WEBP_ENCODER_ABI_VERSION as i32,
-        );
-        if enc.is_null() {
-            return Err(format!("error initializing encoder")).map_err(line!())?;
-        }
-    }
-    Ok(WebpCtx { enc, config })
-}
 impl WebpCtx {
+    pub fn new(
+        quality: f32,
+        lossless: bool,
+        speed: i32,
+        passes: i32,
+        target_size: i32,
+        width: i32,
+        height: i32,
+    ) -> Result<Self> {
+        let mut config: C::WebPConfig;
+        let enc: *mut C::WebPAnimEncoder;
+        unsafe {
+            config = mem::zeroed();
+            if C::WebPConfigInitInternal(
+                &mut config,
+                C::WebPPreset_WEBP_PRESET_DEFAULT,
+                75.0,
+                C::WEBP_ENCODER_ABI_VERSION as i32,
+            ) != 1
+            {
+                return Err(format!("WebPConfigInit failed")).map_err(line!())?;
+            }
+            config.quality = quality;
+            if lossless {
+                config.lossless = 1;
+            } else {
+                config.lossless = 0;
+            }
+            config.method = speed;
+            config.pass = passes;
+            if target_size > 0 {
+                config.target_size = target_size;
+                config.quality = 100.0;
+            }
+            enc = C::WebPAnimEncoderNewInternal(
+                width,
+                height,
+                ptr::null(),
+                C::WEBP_ENCODER_ABI_VERSION as i32,
+            );
+            if enc.is_null() {
+                return Err(format!("error initializing encoder")).map_err(line!())?;
+            }
+        }
+        Ok(WebpCtx { enc, config })
+    }
     pub fn add_anim_frame(
         &mut self,
         frame_data: &[*mut u8; 8],
