@@ -1,6 +1,6 @@
 mod C;
 use std::*;
-
+use stdc::CArray;
 macro_rules! line {
     () => {
         |e| {
@@ -14,7 +14,6 @@ macro_rules! line {
     };
 }
 type Result<T> = std::result::Result<T, Box<dyn error::Error>>;
-
 pub struct FfmpegCtx {
     fmt: *mut C::AVFormatContext,
     codec: *mut C::AVCodecContext,
@@ -258,50 +257,40 @@ impl FfmpegCtx {
         }
     }
     /// UNSAFE return value is only valid until frame_cleanup()
-    pub fn get_conv_frame_data<'a>(&self) -> &[*mut u8; 8] {
+    pub fn get_conv_frame_data(&self) -> &[*mut u8; 8] {
         unsafe { &(*self.dummy_frame).data }
     }
-    /// Get RGB data from single frame (data,linesize,height)
-    pub fn retrieve_single_frame(
-        &mut self,
+    /// Get RGB data from single frame (data,linesize,height),
+    /// output will only be valid if FfmpegCtx struct is valid
+    pub fn retrieve_single_frame<'a>(
+        &'a mut self,
         frame_num: i32,
         width: i32,
         height: i32,
-    ) -> Result<(Vec<u8>, usize, usize)> {
-        let mut linesize: usize = 0;
-        let mut dst_height = height as usize;
-        let mut data: Vec<u8> = Vec::new();
-        self.init_frame_convert(width, height, true).map_err(line!())?;
+    ) -> Result<CArray<'a>> {
+        let mut output = CArray::new(ptr::null_mut(), 0, false);
+        self.init_frame_convert(width, height, true)
+            .map_err(line!())?;
         self.seek_frame(frame_num as i64).map_err(line!())?;
         'a: while self.read_next_frame() {
             self.send_packet(false).map_err(line!())?;
             while self.decode_frame().map_err(line!())? {
                 self.convert_frame().map_err(line!())?;
-                let raw_data: &[u8];
-                let len: usize;
                 unsafe {
-                    linesize = (*self.dummy_frame).linesize[0] as usize;
-                    dst_height = (*self.dummy_frame).height as usize;
-                    len = linesize * dst_height;
-                    raw_data = slice::from_raw_parts((*self.dummy_frame).data[0], len)
+                    let len = (*self.dummy_frame).linesize[0] as usize
+                        * (*self.dummy_frame).height as usize;
+                    output = CArray::new((*self.dummy_frame).data[0], len, false)
                 }
-                data = vec![0; len];
-                let mut i: usize = 0;
-                while i < len {
-                    data[i] = raw_data[i];
-                    i += 1;
-                }
-
                 let _ = self.frame_cleanup();
                 break 'a;
             }
             self.packet_cleanup();
         }
         self.seek_frame(0).map_err(line!())?;
-        if data.len() == 0 {
+        if output.is_null() {
             Err(format!("error decoding given frame")).map_err(line!())?
         } else {
-            Ok((data, linesize, dst_height))
+            Ok(output)
         }
     }
     fn seek_frame(&mut self, frame_num: i64) -> Result<()> {
@@ -336,6 +325,10 @@ impl FfmpegCtx {
             C::avcodec_flush_buffers(self.codec);
             Ok(())
         }
+    }
+    /// returns width and height of dummy frame
+    pub fn get_width_height_dummy_frame(&self) -> (i32, i32) {
+        unsafe { ((*self.dummy_frame).width, (*self.dummy_frame).height) }
     }
 }
 impl Drop for FfmpegCtx {

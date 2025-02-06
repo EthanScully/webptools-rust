@@ -5,3 +5,5 @@ edition = "2021"
 
 [dependencies]
 ffmpeg = {path = "./ffmpeg"}
+libwebp = {path = "./libwebp"}
+stdc = {path = "./stdc"}
