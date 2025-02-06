@@ -7,14 +7,6 @@ pub struct CArray<'a> {
     auto_free: bool,
     mkr: marker::PhantomData<&'a u8>,
 }
-pub fn new_carray<'a>(ptr: *mut u8, size: usize, auto_free: bool) -> CArray<'a> {
-    CArray {
-        ptr,
-        size,
-        auto_free,
-        mkr: marker::PhantomData,
-    }
-}
 impl<'a> CArray<'a> {
     pub fn new(ptr: *mut u8, size: usize, auto_free: bool) -> Self {
         CArray {
