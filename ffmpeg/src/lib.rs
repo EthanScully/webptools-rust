@@ -258,9 +258,16 @@ impl FfmpegCtx {
             return Ok(());
         }
     }
-    /// UNSAFE return value is only valid until frame_cleanup()
-    pub fn get_conv_frame_data(&self) -> &[*mut u8; 8] {
-        unsafe { &(*self.dummy_frame).data }
+    /// UNSAFE return value is only valid until convert_frame() is ran again
+    /// returns (&data, width, height)
+    pub fn get_conv_frame_data(&self) -> Result<(&[*mut u8; 8],i32,i32)> {
+        unsafe {
+            let (w,h) = ((*self.dummy_frame).width, (*self.dummy_frame).height);
+            if w == 0 || h == 0 {
+                Err(format!("data doesn't exist")).map_err(line!())?
+            }
+            Ok((&(*self.dummy_frame).data,w,h))
+        }
     }
     /// Get RGB data from single frame
     pub fn retrieve_single_frame<'a>(
@@ -327,10 +334,6 @@ impl FfmpegCtx {
             Ok(())
         }
     }
-    /// returns width and height of dummy frame
-    pub fn get_width_height_dummy_frame(&self) -> (i32, i32) {
-        unsafe { ((*self.dummy_frame).width, (*self.dummy_frame).height) }
-    }
 }
 impl Drop for FfmpegCtx {
     fn drop(&mut self) {
@@ -339,7 +342,7 @@ impl Drop for FfmpegCtx {
             if !data.is_null() {
                 C::av_freep(data as *mut ffi::c_void);
             }
-            self.send_packet(true).map_err(line!()).unwrap();
+           self.send_packet(true).map_err(line!()).unwrap();
             C::av_frame_free(&mut self.dummy_frame);
             C::av_frame_free(&mut self.frame);
             C::av_packet_free(&mut self.pkt);

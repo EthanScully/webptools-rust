@@ -41,7 +41,7 @@ impl<'a> Drop for CArray<'a> {
         if self.auto_free {
             unsafe {
                 if !self.ptr.is_null() {
-                    C::free(*self.ptr as *mut ffi::c_void);
+                    C::free(self.ptr as *mut ffi::c_void);
                 }
             }
         }

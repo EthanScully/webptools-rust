@@ -53,14 +53,15 @@ impl WebpCtx {
                 config.target_size = target_size;
                 config.quality = 100.0;
             }
+            println!("{},{}",width,height);
             enc = C::WebPAnimEncoderNewInternal(
                 width,
                 height,
                 ptr::null(),
-                C::WEBP_ENCODER_ABI_VERSION as i32,
+                C::WEBP_MUX_ABI_VERSION as i32,
             );
             if enc.is_null() {
-                return Err(format!("error initializing encoder")).map_err(line!())?;
+                return Err(format!("error initializing encoder: memory error")).map_err(line!())?;
             }
         }
         Ok(WebpCtx { enc, config })
@@ -118,7 +119,7 @@ impl WebpCtx {
         Ok(())
     }
     /// returns animated webp file in a C array
-    pub fn get_anim_webp(&mut self) -> Result<CArray> {
+    pub fn get_anim_webp(&mut self) -> Result<CArray<'static>> {
         let mut output: C::WebPData;
         let c_array: CArray;
         unsafe {
