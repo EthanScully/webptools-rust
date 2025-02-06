@@ -3,14 +3,7 @@ use std::*;
 use stdc::CArray;
 macro_rules! line {
     () => {
-        |e| {
-            format!(
-                "{}:{}:{}",
-                panic::Location::caller().file(),
-                panic::Location::caller().line(),
-                e
-            )
-        }
+        |e| format!("{}:{}:{}", panic::Location::caller().file(), panic::Location::caller().line(), e)
     };
 }
 type Result<T> = std::result::Result<T, Box<dyn error::Error>>;
@@ -19,15 +12,7 @@ pub struct WebpCtx {
     config: C::WebPConfig,
 }
 impl WebpCtx {
-    pub fn new(
-        quality: f32,
-        lossless: bool,
-        speed: i32,
-        passes: i32,
-        target_size: i32,
-        width: i32,
-        height: i32,
-    ) -> Result<Self> {
+    pub fn new(quality: f32, lossless: bool, speed: i32, passes: i32, target_size: i32, width: i32, height: i32) -> Result<Self> {
         let mut config: C::WebPConfig;
         let enc: *mut C::WebPAnimEncoder;
         unsafe {
@@ -53,15 +38,9 @@ impl WebpCtx {
                 config.target_size = target_size;
                 config.quality = 100.0;
             }
-            enc = C::WebPAnimEncoderNewInternal(
-                width,
-                height,
-                ptr::null(),
-                C::WEBP_MUX_ABI_VERSION as i32,
-            );
+            enc = C::WebPAnimEncoderNewInternal(width, height, ptr::null(), C::WEBP_MUX_ABI_VERSION as i32);
             if enc.is_null() {
-                return Err(format!("error initializing encoder: memory error"))
-                    .map_err(line!())?;
+                return Err(format!("error initializing encoder: memory error")).map_err(line!())?;
             }
         }
         Ok(WebpCtx { enc, config })
@@ -77,9 +56,7 @@ impl WebpCtx {
         let frame_data = match frame_data {
             None => {
                 unsafe {
-                    if C::WebPAnimEncoderAdd(self.enc, ptr::null_mut(), timestamp_ms, &self.config)
-                        != 1
-                    {
+                    if C::WebPAnimEncoderAdd(self.enc, ptr::null_mut(), timestamp_ms, &self.config) != 1 {
                         return Err(format!("error flushing encoder")).map_err(line!())?;
                     }
                 }

@@ -2,14 +2,7 @@ mod C;
 use std::*;
 macro_rules! line {
     () => {
-        |e| {
-            format!(
-                "{}:{}:{}",
-                panic::Location::caller().file(),
-                panic::Location::caller().line(),
-                e
-            )
-        }
+        |e| format!("{}:{}:{}", panic::Location::caller().file(), panic::Location::caller().line(), e)
     };
 }
 type Result<T> = std::result::Result<T, Box<dyn error::Error>>;
@@ -41,9 +34,7 @@ impl FfmpegCtx {
         unsafe {
             if C::avformat_open_input(
                 &mut fmt,
-                ffi::CString::new(format!("file:{}", filepath))
-                    .map_err(line!())?
-                    .as_ptr(),
+                ffi::CString::new(format!("file:{}", filepath)).map_err(line!())?.as_ptr(),
                 ptr::null_mut(),
                 ptr::null_mut(),
             ) < 0
@@ -57,8 +48,7 @@ impl FfmpegCtx {
             if index < 0 {
                 return Err(format!("could not find stream in input file")).map_err(line!())?;
             }
-            let stream =
-                slice::from_raw_parts((*fmt).streams, (index + 1) as usize)[index as usize];
+            let stream = slice::from_raw_parts((*fmt).streams, (index + 1) as usize)[index as usize];
             if stream.is_null() {
                 return Err(format!("could not find stream in the input")).map_err(line!())?;
             }
@@ -72,8 +62,7 @@ impl FfmpegCtx {
                 return Err(format!("error allocating codec context")).map_err(line!())?;
             }
             if C::avcodec_parameters_to_context(codec, (*stream).codecpar) < 0 {
-                return Err(format!("error copying codec parameters to context"))
-                    .map_err(line!())?;
+                return Err(format!("error copying codec parameters to context")).map_err(line!())?;
             }
             if C::avcodec_open2(codec, dec, ptr::null_mut()) < 0 {
                 return Err(format!("error opening codec")).map_err(line!())?;
@@ -209,12 +198,9 @@ impl FfmpegCtx {
     /// Returns the duration of the frame
     pub fn frame_cleanup(&mut self) -> i32 {
         unsafe {
-            let stream = slice::from_raw_parts((*self.fmt).streams, (self.index + 1) as usize)
-                [self.index as usize];
-            let frame_duration = ((*self.frame).duration as f64
-                * ((*stream).time_base.num as f64 / (*stream).time_base.den as f64)
-                * 1000.0)
-                .round() as i32;
+            let stream = slice::from_raw_parts((*self.fmt).streams, (self.index + 1) as usize)[self.index as usize];
+            let frame_duration =
+                ((*self.frame).duration as f64 * ((*stream).time_base.num as f64 / (*stream).time_base.den as f64) * 1000.0).round() as i32;
             C::av_frame_unref(self.frame);
             return frame_duration;
         }
@@ -269,23 +255,16 @@ impl FfmpegCtx {
         }
     }
     /// Get RGB data from single frame
-    pub fn retrieve_single_frame(
-        &mut self,
-        frame_num: i32,
-        width: i32,
-        height: i32,
-    ) -> Result<&[u8]> {
+    pub fn retrieve_single_frame(&mut self, frame_num: i32, width: i32, height: i32) -> Result<&[u8]> {
         let output: &[u8];
-        self.init_frame_convert(width, height, true)
-            .map_err(line!())?;
+        self.init_frame_convert(width, height, true).map_err(line!())?;
         self.seek_frame(frame_num as i64).map_err(line!())?;
         while self.read_next_frame() {
             self.send_packet(false).map_err(line!())?;
             while self.decode_frame().map_err(line!())? {
                 self.convert_frame().map_err(line!())?;
                 unsafe {
-                    let len = (*self.dummy_frame).linesize[0] as usize
-                        * (*self.dummy_frame).height as usize;
+                    let len = (*self.dummy_frame).linesize[0] as usize * (*self.dummy_frame).height as usize;
                     output = slice::from_raw_parts((*self.dummy_frame).data[0], len);
                 }
                 let _ = self.frame_cleanup();
@@ -299,17 +278,13 @@ impl FfmpegCtx {
     }
     pub fn seek_frame(&mut self, frame_num: i64) -> Result<()> {
         if frame_num as i64 >= self.frame_count().map_err(line!())? {
-            return Err(format!(
-                "selected frame is larger than amount in given media"
-            ))
-            .map_err(line!())?;
+            return Err(format!("selected frame is larger than amount in given media")).map_err(line!())?;
         }
         unsafe {
             if C::av_seek_frame(self.fmt, self.index, frame_num, C::AVSEEK_FLAG_FRAME as i32) >= 0 {
                 return Ok(());
             }
-            let stream = slice::from_raw_parts((*self.fmt).streams, self.index as usize + 1)
-                [self.index as usize];
+            let stream = slice::from_raw_parts((*self.fmt).streams, self.index as usize + 1)[self.index as usize];
             let time_base = (*stream).time_base;
             let framerate = C::av_guess_frame_rate(self.fmt, stream, self.frame);
             let inv_framerate = C::AVRational {
@@ -317,13 +292,7 @@ impl FfmpegCtx {
                 den: framerate.num,
             };
             let timestamp = C::av_rescale_q(frame_num, inv_framerate, time_base);
-            if C::av_seek_frame(
-                self.fmt,
-                self.index,
-                timestamp,
-                C::AVSEEK_FLAG_BACKWARD as i32,
-            ) < 0
-            {
+            if C::av_seek_frame(self.fmt, self.index, timestamp, C::AVSEEK_FLAG_BACKWARD as i32) < 0 {
                 Err(format!("error seeking to frame: {}", frame_num)).map_err(line!())?;
             }
             C::avcodec_flush_buffers(self.codec);
