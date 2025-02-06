@@ -1,6 +1,5 @@
 mod C;
 use std::*;
-use stdc::CArray;
 macro_rules! line {
     () => {
         |e| {
@@ -270,38 +269,28 @@ impl FfmpegCtx {
         }
     }
     /// Get RGB data from single frame
-    pub fn retrieve_single_frame<'a>(
-        &'a mut self,
-        frame_num: i32,
-        width: i32,
-        height: i32,
-    ) -> Result<CArray<'a>> {
-        let mut output = CArray::new(ptr::null_mut(), 0, false);
-        self.init_frame_convert(width, height, true)
-            .map_err(line!())?;
+    pub fn retrieve_single_frame(&mut self,frame_num: i32,width: i32,height: i32,) -> Result<&[u8]> {
+        let output: &[u8];
+        self.init_frame_convert(width, height, true).map_err(line!())?;
         self.seek_frame(frame_num as i64).map_err(line!())?;
-        'a: while self.read_next_frame() {
+        while self.read_next_frame() {
             self.send_packet(false).map_err(line!())?;
             while self.decode_frame().map_err(line!())? {
                 self.convert_frame().map_err(line!())?;
                 unsafe {
-                    let len = (*self.dummy_frame).linesize[0] as usize
-                        * (*self.dummy_frame).height as usize;
-                    output = CArray::new((*self.dummy_frame).data[0], len, false)
+                    let len = (*self.dummy_frame).linesize[0] as usize * (*self.dummy_frame).height as usize;
+                    output = slice::from_raw_parts((*self.dummy_frame).data[0], len);
                 }
                 let _ = self.frame_cleanup();
-                break 'a;
+                self.packet_cleanup();
+                self.seek_frame(0).map_err(line!())?;
+                return Ok(output);
             }
             self.packet_cleanup();
         }
-        self.seek_frame(0).map_err(line!())?;
-        if output.is_null() {
-            Err(format!("error decoding given frame")).map_err(line!())?
-        } else {
-            Ok(output)
-        }
+        return Err(format!("error decoding given frame")).map_err(line!())?
     }
-    fn seek_frame(&mut self, frame_num: i64) -> Result<()> {
+    pub fn seek_frame(&mut self, frame_num: i64) -> Result<()> {
         if frame_num as i64 >= self.frame_count().map_err(line!())? {
             return Err(format!(
                 "selected frame is larger than amount in given media"

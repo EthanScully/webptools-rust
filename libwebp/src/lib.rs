@@ -68,22 +68,24 @@ impl WebpCtx {
     }
     pub fn add_anim_frame(
         &mut self,
-        frame_data: &[*mut u8; 8],
+        frame_data: Option<&[*mut u8; 8]>,
         width: i32,
         height: i32,
         timestamp_ms: i32,
         rgb: bool,
-        flush: bool,
     ) -> Result<()> {
-        if flush {
-            unsafe {
-                if C::WebPAnimEncoderAdd(self.enc, ptr::null_mut(), timestamp_ms, &self.config) != 1
-                {
-                    return Err(format!("error flushing encoder")).map_err(line!())?;
+        let frame_data =match frame_data {
+            None => {
+                unsafe {
+                    if C::WebPAnimEncoderAdd(self.enc, ptr::null_mut(), timestamp_ms, &self.config) != 1
+                    {
+                        return Err(format!("error flushing encoder")).map_err(line!())?;
+                    }
                 }
+                return Ok(());
             }
-            return Ok(());
-        }
+            Some(s) => s,
+        };
         let mut pic: C::WebPPicture;
         unsafe {
             pic = mem::zeroed();
@@ -119,7 +121,7 @@ impl WebpCtx {
         Ok(())
     }
     /// returns animated webp file in a C array
-    pub fn get_anim_webp(&mut self) -> Result<CArray<'static>> {
+    pub fn get_anim_webp(&mut self) -> Result<CArray> {
         let mut output: C::WebPData;
         let c_array: CArray;
         unsafe {
@@ -128,7 +130,7 @@ impl WebpCtx {
                 C::WebPFree(output.bytes as *mut ffi::c_void);
                 return Err(format!("error assembling output")).map_err(line!())?;
             }
-            c_array = CArray::new(output.bytes as *mut u8, output.size, true)
+            c_array = CArray::new(output.bytes as *mut u8, output.size)
         }
         Ok(c_array)
     }

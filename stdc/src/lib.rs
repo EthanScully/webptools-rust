@@ -1,20 +1,13 @@
 mod C;
 use std::*;
 type Result<T> = std::result::Result<T, Box<dyn error::Error>>;
-pub struct CArray<'a> {
+pub struct CArray {
     ptr: *mut u8,
     size: usize,
-    auto_free: bool,
-    mkr: marker::PhantomData<&'a u8>,
 }
-impl<'a> CArray<'a> {
-    pub fn new(ptr: *mut u8, size: usize, auto_free: bool) -> Self {
-        CArray {
-            ptr,
-            size,
-            auto_free,
-            mkr: marker::PhantomData,
-        }
+impl CArray {
+    pub fn new(ptr: *mut u8, size: usize) -> Self {
+        CArray { ptr, size }
     }
     pub fn get_slice(&self) -> Result<&[u8]> {
         unsafe {
@@ -28,13 +21,11 @@ impl<'a> CArray<'a> {
         self.ptr.is_null()
     }
 }
-impl<'a> Drop for CArray<'a> {
+impl Drop for CArray {
     fn drop(&mut self) {
-        if self.auto_free {
-            unsafe {
-                if !self.ptr.is_null() {
-                    C::free(self.ptr as *mut ffi::c_void);
-                }
+        unsafe {
+            if !self.ptr.is_null() {
+                C::free(self.ptr as *mut ffi::c_void);
             }
         }
     }
