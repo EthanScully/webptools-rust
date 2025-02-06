@@ -16,14 +16,14 @@ macro_rules! line {
     };
 }
 fn main() {
-    let mut fctx: FfmpegCtx = FfmpegCtx::new("test.mp4").unwrap();
-    println!("# of Frames: {}", fctx.frame_count().unwrap());
-    let webp_file_data = convert_mp4_webp(&mut fctx, false, 0, 200).unwrap();
+    let webp_file_data = convert_mp4_webp("test.mp4", false, 0, 200).unwrap();
     let mut file = fs::File::create("test.webp").unwrap();
     file.write_all(webp_file_data.get_slice().unwrap()).unwrap();
     file.flush().unwrap();
 }
-fn convert_mp4_webp(fctx: &mut FfmpegCtx, rgb: bool, width: i32, height: i32) -> Result<CArray> {
+fn convert_mp4_webp(filepath: &str,rgb: bool, width: i32, height: i32) -> Result<CArray> {
+    let mut fctx: FfmpegCtx = FfmpegCtx::new(filepath).unwrap();
+    println!("# of Frames: {}", fctx.frame_count().unwrap());
     fctx.init_frame_convert(width, height, rgb).unwrap();
     let (_, w, h) = fctx.get_conv_frame_data().map_err(line!()).unwrap();
     let mut wctx = WebpCtx::new(100.0, false, 0, 1, 0, w, h).unwrap();
